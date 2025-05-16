@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DualStyleGAN 风格迁移</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .upload-area {
+            border: 2px dashed #ccc;
+            padding: 30px;
+            text-align: center;
+            margin-bottom: 20px;
+            cursor: pointer;
+        }
+        #imagePreview, #resultPreview {
+            max-width: 100%;
+            max-height: 300px;
+            display: none;
+            margin-top: 15px;
+        }
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .slider-control {
+            margin-bottom: 10px;
+        }
+        button {
+            background: #4f46e5;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>DualStyleGAN 风格迁移</h1>
+    
+    <div id="uploadArea" class="upload-area">
+        <h3>点击上传图片</h3>
+        <p>或将图片拖放到此处</p>
+        <input type="file" id="imageInput" accept="image/*" style="display:none;">
+        <img id="imagePreview" alt="预览图">
+    </div>
+
+    <div class="controls">
+        <div>
+            <label for="styleType">风格类型：</label>
+            <select id="styleType">
+                <option value="cartoon">卡通</option>
+                <option value="anime">动漫</option>
+                <option value="caricature">漫画</option>
+                <option value="pixar">皮克斯</option>
+            </select>
+        </div>
+        
+        <div class="slider-control">
+            <label for="styleId">风格强度: <span id="styleIdValue">26</span></label>
+            <input type="range" id="styleId" min="0" max="50" value="26" step="1">
+        </div>
+        
+        <div class="slider-control">
+            <label for="structureWeight">结构权重: <span id="structureWeightValue">0.6</span></label>
+            <input type="range" id="structureWeight" min="0" max="1" value="0.6" step="0.1">
+        </div>
+        
+        <div class="slider-control">
+            <label for="colorWeight">色彩权重: <span id="colorWeightValue">1</span></label>
+            <input type="range" id="colorWeight" min="0" max="2" value="1" step="0.1">
+        </div>
+    </div>
+
+    <div style="text-align: center;">
+        <button id="generateBtn">生成风格迁移</button>
+    </div>
+
+    <div class="loading" id="loading">
+        <p>正在处理中，请稍候...</p>
+    </div>
+
+    <div id="resultSection" style="display:none; margin-top:30px;">
+        <h2>结果预览</h2>
+        <img id="resultPreview" alt="结果图">
+        <div style="margin-top:15px;">
+            <button id="downloadBtn">下载结果</button>
+        </div>
+    </div>
+
+    <script>
+        // DOM元素
+        const uploadArea = document.getElementById('uploadArea');
+        const imageInput = document.getElementById('imageInput');
+        const imagePreview = document.getElementById('imagePreview');
+        const generateBtn = document.getElementById('generateBtn');
+        const loading = document.getElementById('loading');
+        const resultSection = document.getElementById('resultSection');
+        const resultPreview = document.getElementById('resultPreview');
+        const downloadBtn = document.getElementById('downloadBtn');
+
+        // 参数控制
+        const styleType = document.getElementById('styleType');
+        const styleId = document.getElementById('styleId');
+        const styleIdValue = document.getElementById('styleIdValue');
+        const structureWeight = document.getElementById('structureWeight');
+        const structureWeightValue = document.getElementById('structureWeightValue');
+        const colorWeight = document.getElementById('colorWeight');
+        const colorWeightValue = document.getElementById('colorWeightValue');
+
+        // 实时更新滑块值
+        styleId.addEventListener('input', () => styleIdValue.textContent = styleId.value);
+        structureWeight.addEventListener('input', () => structureWeightValue.textContent = structureWeight.value);
+        colorWeight.addEventListener('input', () => colorWeightValue.textContent = colorWeight.value);
+
+        // 图片上传处理
+        uploadArea.addEventListener('click', () => imageInput.click());
+        imageInput.addEventListener('change', handleImageUpload);
+        
+        // 拖放功能
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.style.borderColor = '#4f46e5';
+            uploadArea.style.backgroundColor = '#f0fdf4';
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.style.borderColor = '#ccc';
+            uploadArea.style.backgroundColor = 'transparent';
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.style.borderColor = '#ccc';
+            uploadArea.style.backgroundColor = 'transparent';
+            if (e.dataTransfer.files.length) {
+                imageInput.files = e.dataTransfer.files;
+                handleImageUpload();
+            }
+        });
+
+        function handleImageUpload() {
+            const file = imageInput.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    imagePreview.src = e.target.result;
+                    imagePreview.style.display = 'block';
+                    uploadArea.querySelector('h3').textContent = '已选择图片';
+                    uploadArea.querySelector('p').textContent = file.name;
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        // 生成风格迁移
+        generateBtn.addEventListener('click', async () => {
+            if (!imageInput.files.length) {
+                alert('请先上传图片');
+                return;
+            }
+
+            loading.style.display = 'block';
+            resultSection.style.display = 'none';
+
+            try {
+                const formData = new FormData();
+                formData.append('image', imageInput.files[0]);
+                formData.append('style_type', styleType.value);
+                formData.append('style_id', styleId.value);
+                formData.append('structure_weight', structureWeight.value);
+                formData.append('color_weight', colorWeight.value);
+
+                const response = await fetch('/api/generate', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) throw new Error('处理失败');
+
+                const result = await response.blob();
+                resultPreview.src = URL.createObjectURL(result);
+                resultSection.style.display = 'block';
+            } catch (error) {
+                console.error('Error:', error);
+                alert('处理过程中出错: ' + error.message);
+            } finally {
+                loading.style.display = 'none';
+            }
+        });
+
+        // 下载结果
+        downloadBtn.addEventListener('click', () => {
+            if (!resultPreview.src) return;
+            const a = document.createElement('a');
+            a.href = resultPreview.src;
+            a.download = `style-transfer-${Date.now()}.jpg`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        });
+    </script>
+</body>
+</html>
