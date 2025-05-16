@@ -1,0 +1,43 @@
+const express = require('express');
+const multer = require('multer');
+const { Client } = require('gradio-client');
+const path = require('path');
+const fs = require('fs');
+
+const app = express();
+const upload = multer({ dest: 'uploads/' });
+const PORT = 3000;
+
+// 代理API调用
+app.post('/api/generate', upload.single('image'), async (req, res) => {
+    try {
+        const client = new Client("CVPR/DualStyleGAN");
+        
+        // 调用DualStyleGAN API
+        const result = await client.predict(
+            style_type=req.body.style_type,
+            style_id=parseFloat(req.body.style_id),
+            structure_weight=parseFloat(req.body.structure_weight),
+            color_weight=parseFloat(req.body.color_weight),
+            structure_only=false,
+            image=req.file.path,  // 上传的临时文件路径
+            api_name="/generate"
+        );
+
+        // 返回结果图片
+        res.sendFile(result);
+        
+        // 清理临时文件
+        fs.unlinkSync(req.file.path);
+    } catch (error) {
+        console.error('API Error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 静态文件服务
+app.use(express.static('public'));
+
+app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+});
